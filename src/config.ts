@@ -1,5 +1,6 @@
 import type { PluginOption } from 'vite'
 import type { AuthConfig } from '@auth/core/types'
+import type { APIContext, AstroGlobal } from 'astro'
 
 export const virtualConfigModule = (configFile: string = './auth.config'): PluginOption => {
 	const virtualModuleId = 'auth:config'
@@ -27,7 +28,7 @@ export interface AstroAuthConfig {
 	 */
 	prefix?: string
 	/**
-	 * Defineds wether or not you want the integration to handle the API routes
+	 * Defines whether or not you want the integration to handle the API routes
 	 * @default true
 	 */
 	injectEndpoints?: boolean
@@ -37,9 +38,23 @@ export interface AstroAuthConfig {
 	configFile?: string
 }
 
-export interface FullAuthConfig extends AstroAuthConfig, Omit<AuthConfig, 'raw'> {}
-export const defineConfig = (config: FullAuthConfig) => {
-	config.prefix ??= '/api/auth'
-	config.basePath = config.prefix
+export interface SpecifiedAuthConfig extends AstroAuthConfig, Omit<AuthConfig, 'raw'> {}
+export type DynamicAuthConfig = (context: APIContext) => SpecifiedAuthConfig
+export type FullAuthConfig = SpecifiedAuthConfig | DynamicAuthConfig
+
+export function extractConfig(config: FullAuthConfig, context: APIContext): SpecifiedAuthConfig {
+	if (typeof config === 'function') {
+		return config(context)
+	}
+
 	return config
+}
+
+export function defineConfig(config: FullAuthConfig): FullAuthConfig {
+	return context => {
+		const extractedConfig = extractConfig(config, context)
+		extractedConfig.prefix ??= '/api/auth'
+		extractedConfig.basePath = extractedConfig.prefix
+		return extractedConfig
+	}
 }

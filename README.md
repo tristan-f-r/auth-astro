@@ -67,6 +67,35 @@ AUTH_TRUST_HOST=true
 #### Deploying to Vercel?
 Setting `AUTH_TRUST_HOST` is not needed, as we also check for an active Vercel environment.
 
+### Dynamic Configuration
+
+Some database providers, like Cloudflare D1, provide bindings to your databases in the runtime
+environment, which isn't statically accessible, yet provided on each request. You can define
+your configuration as a function which accepts the `APIContext` from API Routes (equivalent to
+the Astro global value for Astro pages/components).
+
+```ts title="auth.config.ts"
+// auth.config.ts
+import GitHub from '@auth/core/providers/github'
+import { DrizzleAdapter } from "@auth/drizzle-adapter";
+import { defineConfig } from "auth-astro";
+import { drizzle } from "drizzle-orm/d1";
+
+export default defineConfig(function(ctx) {
+  const { env } = ctx.locals.runtime;
+  const db = env.DB;
+  return {
+    adapter: DrizzleAdapter(drizzle(db)),
+    providers: [
+      GitHub({
+        clientId: import.meta.env.GITHUB_CLIENT_ID,
+        clientSecret: import.meta.env.GITHUB_CLIENT_SECRET,
+      }),
+    ],
+  }
+})
+```
+
 ### Requirements
 - Node version `>= 17.4`
 - Astro config set to output mode `server`
@@ -139,7 +168,7 @@ You can fetch the session in one of two ways. The `getSession` method can be use
 ---
 import { getSession } from 'auth-astro/server';
 
-const session = await getSession(Astro.request)
+const session = await getSession(Astro)
 ---
 {session ? (
   <p>Welcome {session.user?.name}</p>

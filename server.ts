@@ -28,6 +28,7 @@ import type { AuthAction, Session } from '@auth/core/types'
 import type { APIContext } from 'astro'
 import { parseString } from 'set-cookie-parser'
 import authConfig from 'auth:config'
+import { extractConfig, type SpecifiedAuthConfig } from './src/config'
 
 const actions: AuthAction[] = [
 	'providers',
@@ -40,28 +41,29 @@ const actions: AuthAction[] = [
 	'error',
 ]
 
-function AstroAuthHandler(prefix: string, options = authConfig) {
-	return async ({ cookies, request }: APIContext) => {
-		const url = new URL(request.url)
-		const action = url.pathname.slice(prefix.length + 1).split('/')[0] as AuthAction
+async function AstroAuthHandler(context: APIContext, config: SpecifiedAuthConfig) {
+	const { cookies, request } = context
+	const { prefix } = config
 
-		if (!actions.includes(action) || !url.pathname.startsWith(prefix + '/')) return
+	const url = new URL(request.url)
+	const action = url.pathname.slice(prefix.length + 1).split('/')[0] as AuthAction
 
-		const res = await Auth(request, options)
-		if (['callback', 'signin', 'signout'].includes(action)) {
-			// Properly handle multiple Set-Cookie headers (they can't be concatenated in one)
-			const getSetCookie = res.headers.getSetCookie()
-			if (getSetCookie.length > 0) {
-				getSetCookie.forEach((cookie) => {
-					const { name, value, ...options } = parseString(cookie)
-					// Astro's typings are more explicit than @types/set-cookie-parser for sameSite
-					cookies.set(name, value, options as Parameters<(typeof cookies)['set']>[2])
-				})
-				res.headers.delete('Set-Cookie')
-			}
+	if (!actions.includes(action) || !url.pathname.startsWith(prefix + '/')) return
+
+	const res = await Auth(request, config)
+	if (['callback', 'signin', 'signout'].includes(action)) {
+		// Properly handle multiple Set-Cookie headers (they can't be concatenated in one)
+		const getSetCookie = res.headers.getSetCookie()
+		if (getSetCookie.length > 0) {
+			getSetCookie.forEach((cookie) => {
+				const { name, value, ...options } = parseString(cookie)
+				// Astro's typings are more explicit than @types/set-cookie-parser for sameSite
+				cookies.set(name, value, options as Parameters<(typeof cookies)['set']>[2])
+			})
+			res.headers.delete('Set-Cookie')
 		}
-		return res
 	}
+	return res
 }
 
 /**
@@ -86,34 +88,37 @@ export function AstroAuth(options = authConfig) {
 	// @ts-ignore
 	const { AUTH_SECRET, AUTH_TRUST_HOST, VERCEL, NODE_ENV } = import.meta.env
 
-	options.secret ??= AUTH_SECRET
-	options.trustHost ??= !!(AUTH_TRUST_HOST ?? VERCEL ?? NODE_ENV !== 'production')
+	const prepareConfig = (context: APIContext): SpecifiedAuthConfig => {
+		const config = extractConfig(options, context)
+		config.secret ??= AUTH_SECRET
+		config.trustHost ??= !!(AUTH_TRUST_HOST ?? VERCEL ?? NODE_ENV !== 'production')
+		config.prefix ??= '/api/auth'
+		return config
+	}
 
-	const { prefix = '/api/auth', ...authOptions } = options
-
-	const handler = AstroAuthHandler(prefix, authOptions)
 	return {
 		async GET(context: APIContext) {
-			return await handler(context)
+			return await AstroAuthHandler(context, prepareConfig(context))
 		},
 		async POST(context: APIContext) {
-			return await handler(context)
+			return await AstroAuthHandler(context, prepareConfig(context))
 		},
 	}
 }
 
 /**
  * Fetches the current session.
- * @param req The request object.
+ * @param context The API context object. If you are in a page, you can also pass in Astro directly.
  * @returns The current session, or `null` if there is no session.
  */
-export async function getSession(req: Request, options = authConfig): Promise<Session | null> {
-	// @ts-ignore
+export async function getSession(context: APIContext, config = authConfig): Promise<Session | null> {
+	const options = extractConfig(config, context)
+	// @ts-ignore for import.meta
 	options.secret ??= import.meta.env.AUTH_SECRET
 	options.trustHost ??= true
 
-	const url = new URL(`${options.prefix}/session`, req.url)
-	const response = await Auth(new Request(url, { headers: req.headers }), options)
+	const url = new URL(`${options.prefix}/session`, context.url)
+	const response = await Auth(new Request(url, { headers: context.request.headers }), options)
 	const { status = 200 } = response
 
 	const data = await response.json()
