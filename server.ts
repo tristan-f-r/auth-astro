@@ -88,8 +88,8 @@ export function AstroAuth(options = authConfig) {
 	// @ts-ignore
 	const { AUTH_SECRET, AUTH_TRUST_HOST, VERCEL, NODE_ENV } = import.meta.env
 
-	const prepareConfig = (context: APIContext): SpecifiedAuthConfig => {
-		const config = extractConfig(options, context)
+	const prepareConfig = async (context: APIContext): Promise<SpecifiedAuthConfig> => {
+		const config = await extractConfig(options, context)
 		config.secret ??= AUTH_SECRET
 		config.trustHost ??= !!(AUTH_TRUST_HOST ?? VERCEL ?? NODE_ENV !== 'production')
 		config.prefix ??= '/api/auth'
@@ -98,10 +98,10 @@ export function AstroAuth(options = authConfig) {
 
 	return {
 		async GET(context: APIContext) {
-			return await AstroAuthHandler(context, prepareConfig(context))
+			return await AstroAuthHandler(context, await prepareConfig(context))
 		},
 		async POST(context: APIContext) {
-			return await AstroAuthHandler(context, prepareConfig(context))
+			return await AstroAuthHandler(context, await prepareConfig(context))
 		},
 	}
 }
@@ -112,7 +112,7 @@ export function AstroAuth(options = authConfig) {
  * @returns The current session, or `null` if there is no session.
  */
 export async function getSession(context: APIContext, config = authConfig): Promise<Session | null> {
-	const options = extractConfig(config, context)
+	const options = await extractConfig(config, context)
 	// @ts-ignore for import.meta
 	options.secret ??= import.meta.env.AUTH_SECRET
 	options.trustHost ??= true

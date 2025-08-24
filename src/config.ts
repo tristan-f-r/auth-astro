@@ -39,20 +39,20 @@ export interface AstroAuthConfig {
 }
 
 export interface SpecifiedAuthConfig extends AstroAuthConfig, Omit<AuthConfig, 'raw'> {}
-export type DynamicAuthConfig = (context: APIContext) => SpecifiedAuthConfig
+export type DynamicAuthConfig = (context: APIContext) => Promise<SpecifiedAuthConfig>
 export type FullAuthConfig = SpecifiedAuthConfig | DynamicAuthConfig
 
-export function extractConfig(config: FullAuthConfig, context: APIContext): SpecifiedAuthConfig {
+export async function extractConfig(config: FullAuthConfig, context: APIContext): Promise<SpecifiedAuthConfig> {
 	if (typeof config === 'function') {
-		return config(context)
+		return await config(context)
 	}
 
 	return config
 }
 
 export function defineConfig(config: FullAuthConfig): FullAuthConfig {
-	return context => {
-		const extractedConfig = extractConfig(config, context)
+	return async context => {
+		const extractedConfig = await extractConfig(config, context)
 		extractedConfig.prefix ??= '/api/auth'
 		extractedConfig.basePath = extractedConfig.prefix
 		return extractedConfig
